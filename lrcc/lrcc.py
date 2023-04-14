@@ -310,6 +310,7 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
                 dilation = src_op.dilation,
                 groups = src_op.groups,
                 bias = src_op.bias is not None,
+                device = src_op.weight.device,
                 r = r,
                 r_ratio = r_ratio,
                 fix_sparse = args['fix_sparse'], 
