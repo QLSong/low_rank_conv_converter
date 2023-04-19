@@ -34,6 +34,7 @@ model_convert_conv(
     path=None, # pretrain模型路径，lora_mode可以设为None，其他需要有值
     convert_op_name=[], # 需要转化的层，例如convert_op_name=['conv']，就会把所有名字带conv的op转化成low_rank_conv
     ignore_op_name=[], # 忽视转化的层，例如ignore_op_name=['downsample']，就会把所有名字不带downsample的op转化为low_rank_conv，注意convert_op_name和ignore_op_name只能设置一个
+    fix_op_name=[], # 需要固定参数的层，使用逻辑先判断某层是否需要固定，不需要固定参数的层再去判断要不要做转化
     r=0, # 分解后UV的隐藏维度
     r_ratio=0.25, # 分解后UV的隐藏维度=input_channels*r_ratio，r_ratio与r只需要设置一个
     compress_step=50, # 分解UV是QR分解的迭代次数

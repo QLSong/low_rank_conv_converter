@@ -245,7 +245,7 @@ class LowRankConv2d(nn.Conv2d, LoRALayer):
 
         return sparse_weight_num, sparse_weight_all
 
-def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_name=[], r=0, r_ratio=0.25, compress_step=50, lambda_s=0.01):
+def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_name=[], fix_op_name=[], r=0, r_ratio=0.25, compress_step=50, lambda_s=0.01):
     assert mode in ['fix_sparse', 'fix_low_rank', 'tune_U', 'tune_V', 'tune_V_S', 'tune_U_S', 'tune_all', 'lora_mode']
     assert convert_op_name == [] or ignore_op_name == []
     args = {
@@ -265,32 +265,44 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
     if mode != 'lora_mode':
         assert path is not None
 
-    conv_op_name = []
-    ig_op_name = []
+    convert_op_name_ = []
+    ignore_op_name_ = []
+    fix_op_name_ = []
     for name, op in model.named_modules():
         if type(op) == torch.nn.Conv2d:
+            need_fix = False
+            for op_name in fix_op_name:
+                if op_name in name:
+                    if hasattr(op, 'weight'):
+                        op.weight.requires_grad = False
+                    if hasattr(op, 'bias') and op.bias:
+                        op.bias.requires_grad = False
+                    fix_op_name_.append(name)
+                    need_fix = True
+            if need_fix:
+                continue
             if len(convert_op_name) > 0:
                 need_convert = False
                 for op_name in convert_op_name:
                     if op_name in name:
                         need_convert = True
                 if need_convert:
-                    conv_op_name.append(name)
+                    convert_op_name_.append(name)
                 else:
-                    ig_op_name.append(name)
+                    ignore_op_name_.append(name)
             elif len(ignore_op_name) > 0:
                 need_ignore = False
                 for op_name in ignore_op_name:
                     if op_name in name:
                         need_ignore = True
                 if need_ignore:
-                    ig_op_name.append(name)
+                    ignore_op_name_.append(name)
                 else:
-                    conv_op_name.append(name)
+                    convert_op_name_.append(name)
             else:
-                conv_op_name.append(name)
+                convert_op_name_.append(name)
 
-    for name in conv_op_name:
+    for name in convert_op_name_:
         name_str = name.split('.')
         ops = model
         if len(name_str) > 1:            
@@ -325,8 +337,9 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
                 decompose_no_s = args['decompose_no_s'], 
                 lora_mode = args['lora_mode'],
             )
-        low_rank_op.weight = src_op.weight
-        low_rank_op.bias = src_op.bias
+        low_rank_op.weight.data = src_op.weight.data
+        if src_op.bias is not None:
+            low_rank_op.bias.data = src_op.bias.data
         setattr(ops, name_str[-1], low_rank_op)
         
         if mode != 'lora_mode' and not os.path.exists(path):
@@ -342,9 +355,11 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
             torch.save({'state_dict' : model.state_dict()}, path)
     print("--- convert results ---")
     print("convert conv op name : ")
-    print(conv_op_name)
+    print(convert_op_name_)
     print("ignore conv op name : ")
-    print(ig_op_name)
+    print(ignore_op_name_)
+    print("fix conv op name : ")
+    print(fix_op_name_)
     return model
 
 if __name__ == '__main__':
