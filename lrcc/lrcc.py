@@ -141,17 +141,13 @@ class LowRankConv2d(nn.Conv2d, LoRALayer):
     def merge(self, ):
         self.merged = True
         if self.lora_mode:
-            self.weight.data = self.lora_AB_to_weight() + self.weight
+            self.weight_src = self.weight
+            self.weight = self.lora_AB_to_weight() + self.weight_src
         else:
-            self.weight.data = self.lora_AB_to_weight() + self.sparse_weight * (1 - self.sparse_mask.data)
+            self.weight = self.lora_AB_to_weight() + self.sparse_weight * (1 - self.sparse_mask.data)
             if self.keep_noise:
                 self.weight.data += self.noise.data
         self.weight.requires_grad = True
-        if hasattr(self, 'lora_A'):
-            self.lora_A.requires_grad = False
-            self.lora_B.requires_grad = False
-        if hasattr(self, 'sparse_weight'):
-            self.sparse_weight.requires_grad = False
 
     def lora_AB_to_weight(self):
         if self.reshape_consecutive:
@@ -245,7 +241,7 @@ class LowRankConv2d(nn.Conv2d, LoRALayer):
 
         return sparse_weight_num, sparse_weight_all
 
-def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_name=[], fix_op_name=[], r=0, r_ratio=0.25, compress_step=50, lambda_s=0.01):
+def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_name=[], fix_op_name=[], r=0, r_ratio=0.25, compress_step=50, lambda_s=0.01, merge_parameter=False):
     assert mode in ['fix_sparse', 'fix_low_rank', 'tune_U', 'tune_V', 'tune_V_S', 'tune_U_S', 'tune_all', 'lora_mode']
     assert convert_op_name == [] or ignore_op_name == []
     args = {
@@ -348,6 +344,8 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
                 _, _ = getattr(ops, name_str[-1]).cuda().decompose(compress_step, lambda_s)
             else:
                 _, _ = getattr(ops, name_str[-1]).decompose(compress_step, lambda_s)
+            if merge_parameter:
+                getattr(ops, name_str[-1]).merge()
     if mode != 'lora_mode':
         if os.path.exists(path):
             model.load_state_dict(torch.load(path)['state_dict'])
