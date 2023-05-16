@@ -277,6 +277,9 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
                     need_fix = True
             if need_fix:
                 continue
+            if op.groups > 1:
+                ignore_op_name_.append(name)
+                continue
             if len(convert_op_name) > 0:
                 need_convert = False
                 for op_name in convert_op_name:
