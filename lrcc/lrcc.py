@@ -363,6 +363,43 @@ def model_convert_conv(model, mode, path=None, convert_op_name=[], ignore_op_nam
     print(fix_op_name_)
     return model
 
+def save_lora_state_dict(model, path):
+    lora_state_dict = {}
+    for k, v in model.state_dict().items():
+        name_str = k.split('.')
+        ops = model
+        if len(name_str) > 0:            
+            for i in range(len(name_str)):
+                if name_str[i].isdigit():
+                    ops = ops[int(name_str[i])]
+                else:
+                    ops = getattr(ops, name_str[i])
+        if ops.requires_grad or name_str[-1] == 'running_mean' or name_str[-1] == 'running_var':
+            lora_state_dict[k] = v
+
+    torch.save(lora_state_dict, path)
+
+def load_lora_state_dict(model, lora_path):
+    src_keys = model.state_dict().keys()
+    new_state_dict = {}
+    state_dict = torch.load(lora_path)
+    for k, v in state_dict.items():
+        if k in src_keys:
+            new_state_dict[k] = v
+        else:
+            if 'lora_A' in k:
+                if k.replace('lora_A', 'sparse_weight') in state_dict.keys():
+                    src_weight = model.state_dict()[k.replace('lora_A', 'weight')] = \
+                        (state_dict[k.replace('lora_A', 'lora_B')] @ v).view(src_weight.shape) + \
+                        state_dict[k.replace('lora_A', 'sparse_weight')] * \
+                        (1 - state_dict[k.replace('lora_A', 'sparse_mask')])
+                else:
+                    src_weight = model.state_dict()[k.replace('lora_A', 'weight')]
+                    new_state_dict[k.replace('lora_A', 'weight')] = \
+                        src_weight + (state_dict[k.replace('lora_A', 'lora_B')] @ v).view(src_weight.shape)
+
+    model.load_state_dict(new_state_dict, False)
+
 if __name__ == '__main__':
     from torchvision.models.resnet import resnet18
     model = resnet18()
